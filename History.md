@@ -1,4 +1,67 @@
 
+0.5.0 / 2015-08-03
+==================
+
+ * Adding a heuristic to determine the best HTMLElement on which to attach events listener. The intention here is to enable deku to render into document fragments such as Shadow DOM.
+ * Components can be functions instead of objects
+ * Update dependencies
+ * Fixed bug with replacing text nodes with undefined
+ * Refactored the tests
+ * Removed DOM pooling
+ * Switch to use virtual-element
+
+0.4.12 / 2015-07-28
+==================
+
+ * Merge pull request #212 from dekujs/flatmap-children
+ * Fixed failing tests
+ * Update index.js
+ * Flattening the virtual element children array
+
+0.4.11 / 2015-07-17
+==================
+
+ * Fixed deprecation warnings
+ * Updated history
+
+0.4.10 / 2015-07-16
+==================
+
+ * Added validate hook
+ * Attach events to document instead of document.body
+ * added ability to cancel events
+ * Possibility to pass `false` as well as `null` in component children
+ * Remove prop validation
+ * Added deprecation warnings for magic class and style transformations.
+ * No longer flattening children in virtual nodes
+ * Faster SVG element lookups
+
+0.4.9 / 2015-07-07
+==================
+
+ * Merge pull request #191 from timmak/svg-missing-animate
+ * Add animate to svg list
+
+0.4.8 / 2015-07-01
+==================
+
+ * Merge branch 'master' of ssh://github.com/dekujs/deku
+ * Merge pull request #188 from xdissent/fix-remove-null-el
+ * Handle null element in isElement(). fixes #180
+
+0.4.7 / 2015-07-01
+==================
+
+ * Not pooling select elements
+
+0.4.6 / 2015-06-29
+==================
+
+ * Merge pull request #187 from dekujs/should-render
+ * Fixed: State not committed during shouldUpdate
+ * Merge pull request #177 from mpal9000/patch-1
+ * docs - initialState props
+
 0.4.5 / 2015-06-13
 ==================
 

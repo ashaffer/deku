@@ -1,4 +1,4 @@
-!function(e){if("object"==typeof exports&&"undefined"!=typeof module)module.exports=e();else if("function"==typeof define&&define.amd)define([],e);else{var f;"undefined"!=typeof window?f=window:"undefined"!=typeof global?f=global:"undefined"!=typeof self&&(f=self),f.deku=e()}}(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof _require=="function"&&_require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof _require=="function"&&_require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_require,module,exports){
+(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.deku = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof _require=="function"&&_require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof _require=="function"&&_require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(_require,module,exports){
 /**
  * Module dependencies.
  */
@@ -85,7 +85,7 @@ Application.prototype.unmount = function () {
   return this
 }
 
-},{"component-emitter":10}],2:[function(_require,module,exports){
+},{"component-emitter":8}],2:[function(_require,module,exports){
 /**
  * All of the events can bind to
  */
@@ -150,41 +150,40 @@ if (typeof document !== 'undefined') {
  */
 
 exports.renderString = _require('./stringify')
+},{"./application":1,"./render":5,"./stringify":6}],4:[function(_require,module,exports){
+var type = _require('component-type')
 
 /**
- * Create virtual elements.
+ * Returns the type of a virtual node
+ *
+ * @param  {Object} node
+ * @return {String}
  */
 
-exports.element =
-exports.createElement =
-exports.dom = _require('./virtual')
+module.exports = function nodeType (node) {
+  var v = type(node)
+  if (v === 'null' || node === false) return 'empty'
+  if (v !== 'object') return 'text'
+  if (type(node.type) === 'string') return 'element'
+  return 'component'
+}
 
-},{"./application":1,"./render":4,"./stringify":5,"./virtual":8}],4:[function(_require,module,exports){
+},{"component-type":10}],5:[function(_require,module,exports){
 /**
  * Dependencies.
  */
 
 var raf = _require('component-raf')
-var Pool = _require('dom-pool')
-var walk = _require('dom-walk')
 var isDom = _require('is-dom')
 var uid = _require('get-uid')
 var keypath = _require('object-path')
-var type = _require('component-type')
-var utils = _require('./utils')
-var svg = _require('./svg')
 var events = _require('./events')
-var defaults = utils.defaults
+var svg = _require('./svg')
+var defaults = _require('object-defaults')
 var forEach = _require('fast.js/forEach')
 var assign = _require('fast.js/object/assign')
 var reduce = _require('fast.js/reduce')
-var isPromise = _require('is-promise')
-
-/**
- * These elements won't be pooled
- */
-
-var avoidPooling = ['input', 'textarea'];
+var nodeType = _require('./node-type')
 
 /**
  * Expose `dom`.
@@ -211,7 +210,6 @@ function render (app, container, opts) {
   var connections = {}
   var components = {}
   var entities = {}
-  var pools = {}
   var handlers = {}
   var mountQueue = []
   var children = {}
@@ -228,15 +226,13 @@ function render (app, container, opts) {
    */
 
   var options = defaults(assign({}, app.options || {}, opts || {}), {
-    pooling: true,
-    batching: true,
-    validateProps: false
+    batching: true
   })
 
   /**
    * Listen to DOM events
    */
-
+  var rootElement = getRootElement(container)
   addNativeEventListeners()
 
   /**
@@ -367,8 +363,9 @@ function render (app, container, opts) {
 
   function renderEntity (entity) {
     var component = entity.component
-    if (!component.render) throw new Error('Component needs a render function')
-    var result = component.render(entity.context, setState(entity))
+    var fn = typeof component === 'function' ? component : component.render
+    if (!fn) throw new Error('Component needs a render function')
+    var result = fn(entity.context, setState(entity))
     if (!result) throw new Error('Render function must return an element.')
     return result
   }
@@ -385,7 +382,7 @@ function render (app, container, opts) {
 
   function setState (entity) {
     return function (nextState) {
-      updateEntityStateAsync(entity, nextState)
+      updateEntityState(entity, nextState)
     }
   }
 
@@ -439,7 +436,7 @@ function render (app, container, opts) {
       if (container === document.body) {
         console.warn('deku: Using document.body is allowed but it can cause some issues. Read more: http://cl.ly/b0SC')
       }
-      removeAllChildren(container);
+      removeAllChildren(container)
       container.appendChild(currentNativeElement)
     } else if (currentElement !== app.element) {
       currentNativeElement = patch(rootId, currentElement, app.element, currentNativeElement)
@@ -454,6 +451,7 @@ function render (app, container, opts) {
 
     // Allow rendering again.
     isRendering = false
+
   }
 
   /**
@@ -462,8 +460,8 @@ function render (app, container, opts) {
    */
 
   function flushMountQueue () {
-    var entityId
-    while (entityId = mountQueue.pop()) {
+    while (mountQueue.length > 0) {
+      var entityId = mountQueue.shift()
       var entity = entities[entityId]
       trigger('afterRender', entity, [entity.context, entity.nativeElement])
       triggerUpdate('afterMount', entity, [entity.context, entity.nativeElement, setState(entity)])
@@ -492,7 +490,10 @@ function render (app, container, opts) {
     var entity = entities[entityId]
     setSources(entity)
 
-    if (!shouldUpdate(entity)) return updateChildren(entityId)
+    if (!shouldUpdate(entity)) {
+      commit(entity)
+      return updateChildren(entityId)
+    }
 
     var currentTree = entity.virtualElement
     var nextProps = entity.pendingProps
@@ -573,8 +574,9 @@ function render (app, container, opts) {
    */
 
   function toNative (entityId, path, vnode) {
-    switch (vnode.type) {
+    switch (nodeType(vnode)) {
       case 'text': return toNativeText(vnode)
+      case 'empty': return toNativeEmptyElement(entityId, path)
       case 'element': return toNativeElement(entityId, path, vnode)
       case 'component': return toNativeComponent(entityId, path, vnode)
     }
@@ -586,8 +588,8 @@ function render (app, container, opts) {
    * @param {Object} vnode
    */
 
-  function toNativeText (vnode) {
-    return document.createTextNode(vnode.data)
+  function toNativeText (text) {
+    return document.createTextNode(text)
   }
 
   /**
@@ -595,22 +597,16 @@ function render (app, container, opts) {
    */
 
   function toNativeElement (entityId, path, vnode) {
-    var attributes = vnode.attributes
-    var children = vnode.children
-    var tagName = vnode.tagName
     var el
+    var attributes = vnode.attributes
+    var tagName = vnode.type
+    var childNodes = vnode.children
 
     // create element either from pool or fresh.
-    if (!options.pooling || !canPool(tagName)) {
-      if (svg.isElement(tagName)) {
-        el = document.createElementNS(svg.namespace, tagName)
-      } else {
-        el = document.createElement(tagName)
-      }
+    if (svg.isElement(tagName)) {
+      el = document.createElementNS(svg.namespace, tagName)
     } else {
-      var pool = getPool(tagName)
-      el = cleanup(pool.pop())
-      if (el.parentNode) el.parentNode.removeChild(el)
+      el = document.createElement(tagName)
     }
 
     // set attributes.
@@ -618,16 +614,27 @@ function render (app, container, opts) {
       setAttribute(entityId, path, el, name, value)
     })
 
-    // store keys on the native element for fast event handling.
-    el.__entity__ = entityId
-    el.__path__ = path
-
     // add children.
-    forEach(children, function (child, i) {
+    forEach(childNodes, function (child, i) {
       var childEl = toNative(entityId, path + '.' + i, child)
       if (!childEl.parentNode) el.appendChild(childEl)
     })
 
+    // store keys on the native element for fast event handling.
+    el.__entity__ = entityId
+    el.__path__ = path
+
+    return el
+  }
+
+  /**
+   * Create a native element from a virtual element.
+   */
+
+  function toNativeEmptyElement (entityId, path) {
+    var el = document.createElement('noscript')
+    el.__entity__ = entityId
+    el.__path__ = path
     return el
   }
 
@@ -636,7 +643,7 @@ function render (app, container, opts) {
    */
 
   function toNativeComponent (entityId, path, vnode) {
-    var child = new Entity(vnode.component, vnode.props, entityId)
+    var child = new Entity(vnode.type, assign({ children: vnode.children }, vnode.attributes), entityId)
     children[entityId][path] = child.id
     return mountEntity(child)
   }
@@ -654,13 +661,17 @@ function render (app, container, opts) {
    */
 
   function diffNode (path, entityId, prev, next, el) {
+    var leftType = nodeType(prev)
+    var rightType = nodeType(next)
+
     // Type changed. This could be from element->text, text->ComponentA,
     // ComponentA->ComponentB etc. But NOT div->span. These are the same type
     // (ElementNode) but different tag name.
-    if (prev.type !== next.type) return replaceElement(entityId, path, el, next)
+    if (leftType !== rightType) return replaceElement(entityId, path, el, next)
 
-    switch (next.type) {
+    switch (rightType) {
       case 'text': return diffText(prev, next, el)
+      case 'empty': return el
       case 'element': return diffElement(path, entityId, prev, next, el)
       case 'component': return diffComponent(path, entityId, prev, next, el)
     }
@@ -671,7 +682,7 @@ function render (app, container, opts) {
    */
 
   function diffText (previous, current, el) {
-    if (current.data !== previous.data) el.data = current.data
+    if (current !== previous) el.data = current
     return el
   }
 
@@ -687,9 +698,12 @@ function render (app, container, opts) {
     var rightKeys = reduce(next.children, keyMapReducer, {})
     var currentChildren = assign({}, children[entityId])
 
-    function keyMapReducer (acc, child) {
-      if (child.key != null) {
-        acc[child.key] = child
+    function keyMapReducer (acc, child, i) {
+      if (child && child.attributes && child.attributes.key != null) {
+        acc[child.attributes.key] = {
+          element: child,
+          index: i
+        }
         hasKeys = true
       }
       return acc
@@ -724,8 +738,8 @@ function render (app, container, opts) {
         positions[rightNode.index] = diffNode(
           leftPath,
           entityId,
-          leftNode,
-          rightNode,
+          leftNode.element,
+          rightNode.element,
           childNodes[leftNode.index]
         )
       })
@@ -758,7 +772,7 @@ function render (app, container, opts) {
           positions[rightNode.index] = toNative(
             entityId,
             rightPath,
-            rightNode
+            rightNode.element
           )
         }
       })
@@ -772,40 +786,40 @@ function render (app, container, opts) {
         var rightNode = next.children[i]
 
         // Removals
-        if (rightNode == null) {
+        if (rightNode === undefined) {
           removeElement(
             entityId,
-            path + '.' + leftNode.index,
-            childNodes[leftNode.index]
+            path + '.' + i,
+            childNodes[i]
           )
+          continue
         }
 
         // New Node
-        if (leftNode == null) {
-          positions[rightNode.index] = toNative(
+        if (leftNode === undefined) {
+          positions[i] = toNative(
             entityId,
-            path + '.' + rightNode.index,
+            path + '.' + i,
             rightNode
           )
+          continue
         }
 
         // Updated
-        if (leftNode && rightNode) {
-          positions[leftNode.index] = diffNode(
-            path + '.' + leftNode.index,
-            entityId,
-            leftNode,
-            rightNode,
-            childNodes[leftNode.index]
-          )
-        }
+        positions[i] = diffNode(
+          path + '.' + i,
+          entityId,
+          leftNode,
+          rightNode,
+          childNodes[i]
+        )
       }
     }
 
     // Reposition all the elements
     forEach(positions, function (childEl, newPosition) {
       var target = el.childNodes[newPosition]
-      if (childEl !== target) {
+      if (childEl && childEl !== target) {
         if (target) {
           el.insertBefore(childEl, target)
         } else {
@@ -845,14 +859,14 @@ function render (app, container, opts) {
    */
 
   function diffComponent (path, entityId, prev, next, el) {
-    if (next.component !== prev.component) {
+    if (next.type !== prev.type) {
       return replaceElement(entityId, path, el, next)
     } else {
       var targetId = children[entityId][path]
 
       // This is a hack for now
       if (targetId) {
-        updateEntityProps(targetId, next.props)
+        updateEntityProps(targetId, assign({ children: next.children }, next.attributes))
       }
 
       return el
@@ -864,7 +878,7 @@ function render (app, container, opts) {
    */
 
   function diffElement (path, entityId, prev, next, el) {
-    if (next.tagName !== prev.tagName) return replaceElement(entityId, path, el, next)
+    if (next.type !== prev.type) return replaceElement(entityId, path, el, next)
     diffAttributes(prev, next, el, entityId, path)
     diffChildren(path, entityId, prev, next, el)
     return el
@@ -899,7 +913,7 @@ function render (app, container, opts) {
     } else {
 
       // Just remove the text node
-      if (!isElement(el)) return el.parentNode.removeChild(el)
+      if (!isElement(el)) return el && el.parentNode.removeChild(el)
 
       // Then we need to find any components within this
       // branch and unmount them.
@@ -926,15 +940,6 @@ function render (app, container, opts) {
 
     // Remove it from the DOM
     el.parentNode.removeChild(el)
-
-    // Return all of the elements in this node tree to the pool
-    // so that the elements can be re-used.
-    if (options.pooling) {
-      walk(el, function (node) {
-        if (!isElement(node) || !canPool(node.tagName)) return
-        getPool(node.tagName.toLowerCase()).push(node)
-      })
-    }
   }
 
   /**
@@ -1005,6 +1010,10 @@ function render (app, container, opts) {
    */
 
   function setAttribute (entityId, path, el, name, value) {
+    if (!value) {
+      removeAttribute(entityId, path, el, name)
+      return
+    }
     if (events[name]) {
       addEvent(entityId, path, events[name], value)
       return
@@ -1049,7 +1058,7 @@ function render (app, container, opts) {
         break
       case 'innerHTML':
       case 'value':
-        el[name] = ""
+        el[name] = ''
         break
       default:
         el.removeAttribute(name)
@@ -1083,52 +1092,7 @@ function render (app, container, opts) {
    */
 
   function isElement (el) {
-    return !!el.tagName
-  }
-
-  /**
-   * Get the pool for a tagName, creating it if it
-   * doesn't exist.
-   *
-   * @param {String} tagName
-   *
-   * @return {Pool}
-   */
-
-  function getPool (tagName) {
-    var pool = pools[tagName]
-    if (!pool) {
-      var poolOpts = svg.isElement(tagName) ?
-        { namespace: svg.namespace, tagName: tagName } :
-        { tagName: tagName }
-      pool = pools[tagName] = new Pool(poolOpts)
-    }
-    return pool
-  }
-
-  /**
-   * Clean up previously used native element for reuse.
-   *
-   * @param {HTMLElement} el
-   */
-
-  function cleanup (el) {
-    removeAllChildren(el)
-    removeAllAttributes(el)
-    return el
-  }
-
-  /**
-   * Remove all the attributes from a node
-   *
-   * @param {HTMLElement} el
-   */
-
-  function removeAllAttributes (el) {
-    for (var i = el.attributes.length - 1; i >= 0; i--) {
-      var name = el.attributes[i].name
-      el.removeAttribute(name)
-    }
+    return !!(el && el.tagName)
   }
 
   /**
@@ -1168,27 +1132,7 @@ function render (app, container, opts) {
   function triggerUpdate (name, entity, args) {
     var update = setState(entity)
     args.push(update)
-    var result = trigger(name, entity, args)
-    if (result) {
-      updateEntityStateAsync(entity, result)
-    }
-  }
-
-  /**
-   * Update the entity state using a promise
-   *
-   * @param {Entity} entity
-   * @param {Promise} promise
-   */
-
-  function updateEntityStateAsync (entity, value) {
-    if (isPromise(value)) {
-      value.then(function (newState) {
-        updateEntityState(entity, newState)
-      })
-    } else {
-      updateEntityState(entity, value)
-    }
+    trigger(name, entity, args)
   }
 
   /**
@@ -1205,7 +1149,7 @@ function render (app, container, opts) {
 
   function updateEntityProps (entityId, nextProps) {
     var entity = entities[entityId]
-    entity.pendingProps = nextProps
+    entity.pendingProps = defaults({}, nextProps, entity.component.defaultProps || {})
     entity.dirty = true
     invalidate()
   }
@@ -1232,8 +1176,10 @@ function render (app, container, opts) {
     }
     entity.pendingState = assign({}, entity.context.state)
     entity.pendingProps = assign({}, entity.context.props)
-    validateProps(entity.context.props, entity.propTypes)
     entity.dirty = false
+    if (typeof entity.component.validate === 'function') {
+      entity.component.validate(entity.context)
+    }
   }
 
   /**
@@ -1354,7 +1300,7 @@ function render (app, container, opts) {
 
   function addNativeEventListeners () {
     forEach(events, function (eventType) {
-      document.body.addEventListener(eventType, handleEvent, true)
+      rootElement.addEventListener(eventType, handleEvent, true)
     })
   }
 
@@ -1364,7 +1310,7 @@ function render (app, container, opts) {
 
   function removeNativeEventListeners () {
     forEach(events, function (eventType) {
-      document.body.removeEventListener(eventType, handleEvent, true)
+      rootElement.removeEventListener(eventType, handleEvent, true)
     })
   }
 
@@ -1384,8 +1330,7 @@ function render (app, container, opts) {
       var fn = keypath.get(handlers, [target.__entity__, target.__path__, eventType])
       if (fn) {
         event.delegateTarget = target
-        fn(event)
-        break
+        if (fn(event) === false) break
       }
       target = target.parentNode
     }
@@ -1403,11 +1348,7 @@ function render (app, container, opts) {
     keypath.set(handlers, [entityId, path, eventType], function (e) {
       var entity = entities[entityId]
       if (entity) {
-        var update = setState(entity)
-        var result = fn.call(null, e, entity.context, update)
-        if (result) {
-          updateEntityStateAsync(entity, result)
-        }
+        fn.call(null, e, entity.context, setState(entity))
       } else {
         fn.call(null, e)
       }
@@ -1438,78 +1379,6 @@ function render (app, container, opts) {
   }
 
   /**
-   * Validate the current properties. These simple validations
-   * make it easier to ensure the correct props are passed in.
-   *
-   * Available rules include:
-   *
-   * type: {String} string | array | object | boolean | number | date | function
-   *       {Array} An array of types mentioned above
-   *       {Function} fn(value) should return `true` to pass in
-   * expects: [] An array of values this prop could equal
-   * optional: Boolean
-   */
-
-  function validateProps (props, rules, optPrefix) {
-    var prefix = optPrefix || ''
-    if (!options.validateProps) return
-    forEach(rules, function (options, name) {
-      if (!options) {
-        throw new Error('deku: propTypes should have an options object for each type')
-      }
-
-      var propName = prefix ? prefix + '.' + name : name
-      var value = keypath.get(props, name)
-      var valueType = type(value)
-      var typeFormat = type(options.type)
-      var optional = (options.optional === true)
-
-      // If it's optional and doesn't exist
-      if (optional && value == null) {
-        return
-      }
-
-      // If it's required and doesn't exist
-      if (!optional && value == null) {
-        throw new TypeError('Missing property: ' + propName)
-      }
-
-      // It's a nested type
-      if (typeFormat === 'object') {
-        validateProps(value, options.type, propName)
-        return
-      }
-
-      // If it's the incorrect type
-      if (typeFormat === 'string' && valueType !== options.type) {
-        throw new TypeError('Invalid property type: ' + propName)
-      }
-
-      // If type is validate function
-      if (typeFormat === 'function' && !options.type(value)) {
-        throw new TypeError('Invalid property type: ' + propName)
-      }
-
-      // if type is array of possible types
-      if (typeFormat === 'array' && options.type.indexOf(valueType) < 0) {
-        throw new TypeError('Invalid property type: ' + propName)
-      }
-
-      // If it's an invalid value
-      if (options.expects && options.expects.indexOf(value) < 0) {
-        throw new TypeError('Invalid property value: ' + propName)
-      }
-    })
-
-    // Now check for props that haven't been defined
-    forEach(props, function (value, key) {
-      // props.children is always passed in, even if it's not defined
-      if (key === 'children') return
-      if (!rules[key]) throw new Error('Unexpected property: ' + key)
-    })
-  }
-
-  /**
    * Used for debugging to inspect the current state without
    * us needing to explicitly manage storing/updating references.
    *
@@ -1519,7 +1388,6 @@ function render (app, container, opts) {
   function inspect () {
     return {
       entities: entities,
-      pools: pools,
       handlers: handlers,
       connections: connections,
       currentElement: currentElement,
@@ -1557,7 +1425,7 @@ function Entity (component, props, ownerId) {
   this.component = component
   this.propTypes = component.propTypes || {}
   this.context = {}
-  this.context.id = this.id;
+  this.context.id = this.id
   this.context.props = defaults(props || {}, component.defaultProps || {})
   this.context.state = this.component.initialState ? this.component.initialState(this.context.props) : {}
   this.pendingProps = assign({}, this.context.props)
@@ -1569,33 +1437,32 @@ function Entity (component, props, ownerId) {
 }
 
 /**
- * Should we pool an element?
- */
-
-function canPool(tagName) {
-  return avoidPooling.indexOf(tagName) < 0
-}
-
-/**
- * Get a nested node using a path
+ * Retrieve the nearest 'body' ancestor of the given element or else the root
+ * element of the document in which stands the given element.
  *
- * @param {HTMLElement} el   The root node '0'
- * @param {String} path The path string eg. '0.2.43'
+ * This is necessary if you want to attach the events handler to the correct
+ * element and be able to dispatch events in document fragments such as
+ * Shadow DOM.
+ *
+ * @param  {HTMLElement} el The element on which we will render an app.
+ * @return {HTMLElement}    The root element on which we will attach the events
+ *                          handler.
  */
 
-function getNodeAtPath(el, path) {
-  var parts = path.split('.')
-  parts.shift()
-  while (parts.length) {
-    el = el.childNodes[parts.pop()]
+function getRootElement (el) {
+  while (el.parentElement) {
+    if (el.tagName === 'BODY' || !el.parentElement) {
+      return el
+    }
+    el = el.parentElement
   }
   return el
 }
 
-},{"./events":2,"./svg":6,"./utils":7,"component-raf":11,"component-type":12,"dom-pool":13,"dom-walk":14,"fast.js/forEach":18,"fast.js/object/assign":21,"fast.js/reduce":24,"get-uid":25,"is-dom":26,"is-promise":27,"object-path":28}],5:[function(_require,module,exports){
-var utils = _require('./utils')
-var events = _require('./events')
-var defaults = utils.defaults
+},{"./events":2,"./node-type":4,"./svg":7,"component-raf":9,"fast.js/forEach":13,"fast.js/object/assign":16,"fast.js/reduce":19,"get-uid":20,"is-dom":21,"object-defaults":24,"object-path":25}],6:[function(_require,module,exports){
+var defaults = _require('object-defaults')
+var nodeType = _require('./node-type')
+var type = _require('component-type')
 
 /**
  * Expose `stringify`.
@@ -1642,12 +1509,13 @@ module.exports = function (app) {
    */
 
   function stringifyNode (node, path) {
-    switch (node.type) {
-      case 'text': return node.data
+    switch (nodeType(node)) {
+      case 'empty': return '<noscript />'
+      case 'text': return node
       case 'element':
         var children = node.children
         var attributes = node.attributes
-        var tagName = node.tagName
+        var tagName = node.type
         var innerHTML = attributes.innerHTML
         var str = '<' + tagName + attrs(attributes) + '>'
 
@@ -1661,7 +1529,7 @@ module.exports = function (app) {
 
         str += '</' + tagName + '>'
         return str
-      case 'component': return stringify(node.component, node.props)
+      case 'component': return stringify(node.type, node.attributes)
     }
 
     throw new Error('Invalid type')
@@ -1681,9 +1549,9 @@ module.exports = function (app) {
 function attrs (attributes) {
   var str = ''
   for (var key in attributes) {
+    var value = attributes[key]
     if (key === 'innerHTML') continue
-    if (events[key]) continue
-    str += attr(key, attributes[key])
+    if (isValidAttributeValue(value)) str += attr(key, attributes[key])
   }
   return str
 }
@@ -1701,443 +1569,27 @@ function attr (key, val) {
   return ' ' + key + '="' + val + '"'
 }
 
-},{"./events":2,"./utils":7}],6:[function(_require,module,exports){
-var indexOf = _require('fast.js/array/indexOf')
-
 /**
- * This file lists the supported SVG elements used by the
- * renderer. We may add better SVG support in the future
- * that doesn't require whitelisting elements.
- */
-
-exports.namespace = 'http://www.w3.org/2000/svg'
-
-/**
- * Supported SVG elements
+ * Is a value able to be set a an attribute value?
  *
- * @type {Array}
- */
-
-exports.elements = [
-  'circle',
-  'defs',
-  'ellipse',
-  'g',
-  'line',
-  'linearGradient',
-  'mask',
-  'path',
-  'pattern',
-  'polygon',
-  'polyline',
-  'radialGradient',
-  'rect',
-  'stop',
-  'svg',
-  'text',
-  'tspan'
-]
-
-/**
- * Supported SVG attributes
- */
-
-exports.attributes = [
-  'cx',
-  'cy',
-  'd',
-  'dx',
-  'dy',
-  'fill',
-  'fillOpacity',
-  'fontFamily',
-  'fontSize',
-  'fx',
-  'fy',
-  'gradientTransform',
-  'gradientUnits',
-  'markerEnd',
-  'markerMid',
-  'markerStart',
-  'offset',
-  'opacity',
-  'patternContentUnits',
-  'patternUnits',
-  'points',
-  'preserveAspectRatio',
-  'r',
-  'rx',
-  'ry',
-  'spreadMethod',
-  'stopColor',
-  'stopOpacity',
-  'stroke',
-  'strokeDasharray',
-  'strokeLinecap',
-  'strokeOpacity',
-  'strokeWidth',
-  'textAnchor',
-  'transform',
-  'version',
-  'viewBox',
-  'x1',
-  'x2',
-  'x',
-  'y1',
-  'y2',
-  'y'
-]
-
-/**
- * Is element's namespace SVG?
+ * @param {Any} value
  *
- * @param {String} name
+ * @return {Boolean}
  */
 
-exports.isElement = function (name) {
-  return indexOf(exports.elements, name) !== -1
+function isValidAttributeValue (value) {
+  var valueType = type(value)
+  return (valueType === 'string' || valueType === 'boolean' || valueType === 'number')
 }
 
-/**
- * Are element's attributes SVG?
- *
- * @param {String} attr
- */
-
-exports.isAttribute = function (attr) {
-  return indexOf(exports.attributes, attr) !== -1
+},{"./node-type":4,"component-type":10,"object-defaults":24}],7:[function(_require,module,exports){
+module.exports = {
+  isElement: _require('is-svg-element').isElement,
+  isAttribute: _require('is-svg-attribute'),
+  namespace: 'http://www.w3.org/2000/svg'
 }
 
-
-},{"fast.js/array/indexOf":16}],7:[function(_require,module,exports){
-/**
- * The npm 'defaults' module but without clone because
- * it was requiring the 'Buffer' module which is huge.
- *
- * @param {Object} options
- * @param {Object} defaults
- *
- * @return {Object}
- */
-
-exports.defaults = function(options, defaults) {
-  Object.keys(defaults).forEach(function(key) {
-    if (typeof options[key] === 'undefined') {
-      options[key] = defaults[key]
-    }
-  })
-  return options
-}
-
-},{}],8:[function(_require,module,exports){
-/**
- * Module dependencies.
- */
-
-var type = _require('component-type')
-var slice = _require('sliced')
-var flatten = _require('array-flatten')
-
-/**
- * This function lets us create virtual nodes using a simple
- * syntax. It is compatible with JSX transforms so you can use
- * JSX to write nodes that will compile to this function.
- *
- * let node = virtual('div', { id: 'foo' }, [
- *   virtual('a', { href: 'http://google.com' }, 'Google')
- * ])
- *
- * You can leave out the attributes or the children if either
- * of them aren't needed and it will figure out what you're
- * trying to do.
- */
-
-module.exports = virtual
-
-/**
- * Create virtual DOM trees.
- *
- * This creates the nicer API for the user.
- * It translates that friendly API into an actual tree of nodes.
- *
- * @param {String|Function} type
- * @param {Object} props
- * @param {Array} children
- * @return {Node}
- * @api public
- */
-
-function virtual (type, props, children) {
-  // Default to div with no args
-  if (!type) {
-    throw new Error('deku: Element needs a type. Read more: http://cl.ly/b0KZ')
-  }
-
-  // Skipped adding attributes and we're passing
-  // in children instead.
-  if (arguments.length === 2 && (typeof props === 'string' || Array.isArray(props))) {
-    children = props
-    props = {}
-  }
-
-  // Account for JSX putting the children as multiple arguments.
-  // This is essentially just the ES6 rest param
-  if (arguments.length > 2 && Array.isArray(arguments[2]) === false) {
-    children = slice(arguments, 2)
-  }
-
-  children = children || []
-  props = props || {}
-
-  // passing in a single child, you can skip
-  // using the array
-  if (!Array.isArray(children)) {
-    children = [ children ]
-  }
-
-  children = flatten(children, 1).reduce(normalize, [])
-
-  // pull the key out from the data.
-  var key = 'key' in props ? String(props.key) : null
-  delete props['key']
-
-  // if you pass in a function, it's a `Component` constructor.
-  // otherwise it's an element.
-  var node
-  if (typeof type === 'string') {
-    node = new ElementNode(type, props, key, children)
-  } else {
-    node = new ComponentNode(type, props, key, children)
-  }
-
-  // set the unique ID
-  node.index = 0
-
-  return node
-}
-
-/**
- * Parse nodes into real `Node` objects.
- *
- * @param {Mixed} node
- * @param {Integer} index
- * @return {Node}
- * @api private
- */
-
-function normalize (acc, node) {
-  if (node == null) {
-    return acc
-  }
-  if (typeof node === 'string' || typeof node === 'number') {
-    var newNode = new TextNode(String(node))
-    newNode.index = acc.length
-    acc.push(newNode)
-  } else {
-    node.index = acc.length
-    acc.push(node)
-  }
-  return acc
-}
-
-/**
- * Initialize a new `ComponentNode`.
- *
- * @param {Component} component
- * @param {Object} props
- * @param {String} key Used for sorting/replacing during diffing.
- * @param {Array} children Child virtual nodes
- * @api public
- */
-
-function ComponentNode (component, props, key, children) {
-  this.key = key
-  this.props = props
-  this.type = 'component'
-  this.component = component
-  this.props.children = children || []
-}
-
-/**
- * Initialize a new `ElementNode`.
- *
- * @param {String} tagName
- * @param {Object} attributes
- * @param {String} key Used for sorting/replacing during diffing.
- * @param {Array} children Child virtual dom nodes.
- * @api public
- */
-
-function ElementNode (tagName, attributes, key, children) {
-  this.type = 'element'
-  this.attributes = parseAttributes(attributes)
-  this.tagName = tagName
-  this.children = children || []
-  this.key = key
-}
-
-/**
- * Initialize a new `TextNode`.
- *
- * This is just a virtual HTML text object.
- *
- * @param {String} text
- * @api public
- */
-
-function TextNode (text) {
-  this.type = 'text'
-  this.data = String(text)
-}
-
-/**
- * Parse attributes for some special cases.
- *
- * TODO: This could be more functional and allow hooks
- * into the processing of the attributes at a component-level
- *
- * @param {Object} attributes
- *
- * @return {Object}
- */
-
-function parseAttributes (attributes) {
-  // style: { 'text-align': 'left' }
-  if (attributes.style) {
-    attributes.style = parseStyle(attributes.style)
-  }
-
-  // class: { foo: true, bar: false, baz: true }
-  // class: ['foo', 'bar', 'baz']
-  if (attributes.class) {
-    attributes.class = parseClass(attributes.class)
-  }
-
-  // Remove attributes with false values
-  var filteredAttributes = {}
-  for (var key in attributes) {
-    var value = attributes[key]
-    if (value == null || value === false) continue
-    filteredAttributes[key] = value
-  }
-
-  return filteredAttributes
-}
-
-/**
- * Parse a block of styles into a string.
- *
- * TODO: this could do a lot more with vendor prefixing,
- * number values etc. Maybe there's a way to allow users
- * to hook into this?
- *
- * @param {Object} styles
- *
- * @return {String}
- */
-
-function parseStyle (styles) {
-  if (type(styles) === 'string') {
-    return styles
-  }
-  var str = ''
-  for (var name in styles) {
-    var value = styles[name]
-    str = str + name + ':' + value + ';'
-  }
-  return str;
-}
-
-/**
- * Parse the class attribute so it's able to be
- * set in a more user-friendly way
- *
- * @param {String|Object|Array} value
- *
- * @return {String}
- */
-
-function parseClass (value) {
-  // { foo: true, bar: false, baz: true }
-  if (type(value) === 'object') {
-    var matched = []
-    for (var key in value) {
-      if (value[key]) matched.push(key)
-    }
-    value = matched
-  }
-
-  // ['foo', 'bar', 'baz']
-  if (type(value) === 'array') {
-    if (value.length === 0) {
-      return
-    }
-    value = value.join(' ')
-  }
-
-  return value
-}
-
-},{"array-flatten":9,"component-type":12,"sliced":29}],9:[function(_require,module,exports){
-/**
- * Recursive flatten function with depth.
- *
- * @param  {Array}  array
- * @param  {Array}  result
- * @param  {Number} depth
- * @return {Array}
- */
-function flattenDepth (array, result, depth) {
-  for (var i = 0; i < array.length; i++) {
-    var value = array[i]
-
-    if (depth > 0 && Array.isArray(value)) {
-      flattenDepth(value, result, depth - 1)
-    } else {
-      result.push(value)
-    }
-  }
-
-  return result
-}
-
-/**
- * Recursive flatten function. Omitting depth is slightly faster.
- *
- * @param  {Array} array
- * @param  {Array} result
- * @return {Array}
- */
-function flattenForever (array, result) {
-  for (var i = 0; i < array.length; i++) {
-    var value = array[i]
-
-    if (Array.isArray(value)) {
-      flattenForever(value, result)
-    } else {
-      result.push(value)
-    }
-  }
-
-  return result
-}
-
-/**
- * Flatten an array, with the ability to define a depth.
- *
- * @param  {Array}  array
- * @param  {Number} depth
- * @return {Array}
- */
-module.exports = function (array, depth) {
-  if (depth == null) {
-    return flattenForever(array, [])
-  }
-
-  return flattenDepth(array, [], depth)
-}
-
-},{}],10:[function(_require,module,exports){
+},{"is-svg-attribute":22,"is-svg-element":23}],8:[function(_require,module,exports){
 
 /**
  * Expose `Emitter`.
@@ -2300,7 +1752,7 @@ Emitter.prototype.hasListeners = function(event){
   return !! this.listeners(event).length;
 };
 
-},{}],11:[function(_require,module,exports){
+},{}],9:[function(_require,module,exports){
 /**
  * Expose `requestAnimationFrame()`.
  */
@@ -2336,7 +1788,7 @@ exports.cancel = function(id){
   cancel.call(window, id);
 };
 
-},{}],12:[function(_require,module,exports){
+},{}],10:[function(_require,module,exports){
 /**
  * toString ref.
  */
@@ -2372,87 +1824,7 @@ module.exports = function(val){
   return typeof val;
 };
 
-},{}],13:[function(_require,module,exports){
-function Pool(params) {
-    if (typeof params !== 'object') {
-        throw new Error("Please pass parameters. Example -> new Pool({ tagName: \"div\" })");
-    }
-
-    if (typeof params.tagName !== 'string') {
-        throw new Error("Please specify a tagName. Example -> new Pool({ tagName: \"div\" })");
-    }
-
-    this.storage = [];
-    this.tagName = params.tagName.toLowerCase();
-    this.namespace = params.namespace;
-}
-
-Pool.prototype.push = function(el) {
-    if (el.tagName.toLowerCase() !== this.tagName) {
-        return;
-    }
-    
-    this.storage.push(el);
-};
-
-Pool.prototype.pop = function(argument) {
-    if (this.storage.length === 0) {
-        return this.create();
-    } else {
-        return this.storage.pop();
-    }
-};
-
-Pool.prototype.create = function() {
-    if (this.namespace) {
-        return document.createElementNS(this.namespace, this.tagName);
-    } else {
-        return document.createElement(this.tagName);
-    }
-};
-
-Pool.prototype.allocate = function(size) {
-    if (this.storage.length >= size) {
-        return;
-    }
-
-    var difference = size - this.storage.length;
-    for (var poolAllocIter = 0; poolAllocIter < difference; poolAllocIter++) {
-        this.storage.push(this.create());
-    }
-};
-
-if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
-    module.exports = Pool;
-}
-
-},{}],14:[function(_require,module,exports){
-var slice = Array.prototype.slice
-
-module.exports = iterativelyWalk
-
-function iterativelyWalk(nodes, cb) {
-    if (!('length' in nodes)) {
-        nodes = [nodes]
-    }
-    
-    nodes = slice.call(nodes)
-
-    while(nodes.length) {
-        var node = nodes.shift(),
-            ret = cb(node)
-
-        if (ret) {
-            return ret
-        }
-
-        if (node.childNodes && node.childNodes.length) {
-            nodes = slice.call(node.childNodes).concat(nodes)
-        }
-    }
-}
-
-},{}],15:[function(_require,module,exports){
+},{}],11:[function(_require,module,exports){
 'use strict';
 
 var bindInternal3 = _require('../function/bindInternal3');
@@ -2475,42 +1847,7 @@ module.exports = function fastForEach (subject, fn, thisContext) {
   }
 };
 
-},{"../function/bindInternal3":19}],16:[function(_require,module,exports){
-'use strict';
-
-/**
- * # Index Of
- *
- * A faster `Array.prototype.indexOf()` implementation.
- *
- * @param  {Array}  subject   The array (or array-like) to search within.
- * @param  {mixed}  target    The target item to search for.
- * @param  {Number} fromIndex The position to start searching from, if known.
- * @return {Number}           The position of the target in the subject, or -1 if it does not exist.
- */
-module.exports = function fastIndexOf (subject, target, fromIndex) {
-  var length = subject.length,
-      i = 0;
-
-  if (typeof fromIndex === 'number') {
-    i = fromIndex;
-    if (i < 0) {
-      i += length;
-      if (i < 0) {
-        i = 0;
-      }
-    }
-  }
-
-  for (; i < length; i++) {
-    if (subject[i] === target) {
-      return i;
-    }
-  }
-  return -1;
-};
-
-},{}],17:[function(_require,module,exports){
+},{"../function/bindInternal3":14}],12:[function(_require,module,exports){
 'use strict';
 
 var bindInternal4 = _require('../function/bindInternal4');
@@ -2547,7 +1884,7 @@ module.exports = function fastReduce (subject, fn, initialValue, thisContext) {
   return result;
 };
 
-},{"../function/bindInternal4":20}],18:[function(_require,module,exports){
+},{"../function/bindInternal4":15}],13:[function(_require,module,exports){
 'use strict';
 
 var forEachArray = _require('./array/forEach'),
@@ -2570,7 +1907,7 @@ module.exports = function fastForEach (subject, fn, thisContext) {
     return forEachObject(subject, fn, thisContext);
   }
 };
-},{"./array/forEach":15,"./object/forEach":22}],19:[function(_require,module,exports){
+},{"./array/forEach":11,"./object/forEach":17}],14:[function(_require,module,exports){
 'use strict';
 
 /**
@@ -2583,7 +1920,7 @@ module.exports = function bindInternal3 (func, thisContext) {
   };
 };
 
-},{}],20:[function(_require,module,exports){
+},{}],15:[function(_require,module,exports){
 'use strict';
 
 /**
@@ -2596,7 +1933,7 @@ module.exports = function bindInternal4 (func, thisContext) {
   };
 };
 
-},{}],21:[function(_require,module,exports){
+},{}],16:[function(_require,module,exports){
 'use strict';
 
 /**
@@ -2632,7 +1969,7 @@ module.exports = function fastAssign (target) {
   return target;
 };
 
-},{}],22:[function(_require,module,exports){
+},{}],17:[function(_require,module,exports){
 'use strict';
 
 var bindInternal3 = _require('../function/bindInternal3');
@@ -2657,7 +1994,7 @@ module.exports = function fastForEachObject (subject, fn, thisContext) {
   }
 };
 
-},{"../function/bindInternal3":19}],23:[function(_require,module,exports){
+},{"../function/bindInternal3":14}],18:[function(_require,module,exports){
 'use strict';
 
 var bindInternal4 = _require('../function/bindInternal4');
@@ -2696,7 +2033,7 @@ module.exports = function fastReduceObject (subject, fn, initialValue, thisConte
   return result;
 };
 
-},{"../function/bindInternal4":20}],24:[function(_require,module,exports){
+},{"../function/bindInternal4":15}],19:[function(_require,module,exports){
 'use strict';
 
 var reduceArray = _require('./array/reduce'),
@@ -2721,14 +2058,14 @@ module.exports = function fastReduce (subject, fn, initialValue, thisContext) {
     return reduceObject(subject, fn, initialValue, thisContext);
   }
 };
-},{"./array/reduce":17,"./object/reduce":23}],25:[function(_require,module,exports){
+},{"./array/reduce":12,"./object/reduce":18}],20:[function(_require,module,exports){
 /** generate unique id for selector */
 var counter = Date.now() % 1e9;
 
 module.exports = function getUid(){
 	return (Math.random() * 1e9 >>> 0) + (counter++);
 };
-},{}],26:[function(_require,module,exports){
+},{}],21:[function(_require,module,exports){
 /*global window*/
 
 /**
@@ -2745,14 +2082,125 @@ module.exports = function isNode(val){
   return 'number' == typeof val.nodeType && 'string' == typeof val.nodeName;
 }
 
-},{}],27:[function(_require,module,exports){
-module.exports = isPromise;
+},{}],22:[function(_require,module,exports){
+/**
+ * Supported SVG attributes
+ */
 
-function isPromise(obj) {
-  return obj && (typeof obj === 'object' || typeof obj === 'function') && typeof obj.then === 'function';
+exports.attributes = {
+  'cx': true,
+  'cy': true,
+  'd': true,
+  'dx': true,
+  'dy': true,
+  'fill': true,
+  'fillOpacity': true,
+  'fontFamily': true,
+  'fontSize': true,
+  'fx': true,
+  'fy': true,
+  'gradientTransform': true,
+  'gradientUnits': true,
+  'markerEnd': true,
+  'markerMid': true,
+  'markerStart': true,
+  'offset': true,
+  'opacity': true,
+  'patternContentUnits': true,
+  'patternUnits': true,
+  'points': true,
+  'preserveAspectRatio': true,
+  'r': true,
+  'rx': true,
+  'ry': true,
+  'spreadMethod': true,
+  'stopColor': true,
+  'stopOpacity': true,
+  'stroke': true,
+  'strokeDasharray': true,
+  'strokeLinecap': true,
+  'strokeOpacity': true,
+  'strokeWidth': true,
+  'textAnchor': true,
+  'transform': true,
+  'version': true,
+  'viewBox': true,
+  'x1': true,
+  'x2': true,
+  'x': true,
+  'y1': true,
+  'y2': true,
+  'y': true
 }
 
-},{}],28:[function(_require,module,exports){
+/**
+ * Are element's attributes SVG?
+ *
+ * @param {String} attr
+ */
+
+module.exports = function (attr) {
+  return attr in exports.attributes
+}
+
+},{}],23:[function(_require,module,exports){
+/**
+ * Supported SVG elements
+ *
+ * @type {Array}
+ */
+
+exports.elements = {
+  'animate': true,
+  'circle': true,
+  'defs': true,
+  'ellipse': true,
+  'g': true,
+  'line': true,
+  'linearGradient': true,
+  'mask': true,
+  'path': true,
+  'pattern': true,
+  'polygon': true,
+  'polyline': true,
+  'radialGradient': true,
+  'rect': true,
+  'stop': true,
+  'svg': true,
+  'text': true,
+  'tspan': true
+}
+
+/**
+ * Is element's namespace SVG?
+ *
+ * @param {String} name
+ */
+
+exports.isElement = function (name) {
+  return name in exports.elements
+}
+
+},{}],24:[function(_require,module,exports){
+'use strict'
+
+module.exports = function(target) {
+  target = target || {}
+
+  for (var i = 1; i < arguments.length; i++) {
+    var source = arguments[i]
+    if (!source) continue
+
+    Object.getOwnPropertyNames(source).forEach(function(key) {
+      if (undefined === target[key])
+        target[key] = source[key]
+    })
+  }
+
+  return target
+}
+
+},{}],25:[function(_require,module,exports){
 (function (root, factory){
   'use strict';
 
@@ -2778,15 +2226,16 @@ function isPromise(obj) {
       return true;
     }
     if (isArray(value) && value.length === 0) {
-      return true;
-    } else {
-      for (var i in value) {
-        if (_hasOwnProperty.call(value, i)) {
-          return false;
+        return true;
+    } else if (!isString(value)) {
+        for (var i in value) {
+            if (_hasOwnProperty.call(value, i)) {
+                return false;
+            }
         }
-      }
-      return true;
+        return true;
     }
+    return false;
   }
 
   function toString(type){
@@ -2889,7 +2338,15 @@ function isPromise(obj) {
     return obj;
   }
 
-  var objectPath = {};
+  var objectPath = function(obj) {
+    return Object.keys(objectPath).reduce(function(proxy, prop) {
+      if (typeof objectPath[prop] === 'function') {
+        proxy[prop] = objectPath[prop].bind(objectPath, obj);
+      }
+
+      return proxy;
+    }, {});
+  };
 
   objectPath.has = function (obj, path) {
     if (isEmpty(obj)) {
@@ -3022,44 +2479,6 @@ function isPromise(obj) {
 
   return objectPath;
 });
-
-},{}],29:[function(_require,module,exports){
-module.exports = exports = _require('./lib/sliced');
-
-},{"./lib/sliced":30}],30:[function(_require,module,exports){
-
-/**
- * An Array.prototype.slice.call(arguments) alternative
- *
- * @param {Object} args something with a length
- * @param {Number} slice
- * @param {Number} sliceEnd
- * @api public
- */
-
-module.exports = function (args, slice, sliceEnd) {
-  var ret = [];
-  var len = args.length;
-
-  if (0 === len) return ret;
-
-  var start = slice < 0
-    ? Math.max(0, slice + len)
-    : slice || 0;
-
-  if (sliceEnd !== undefined) {
-    len = sliceEnd < 0
-      ? sliceEnd + len
-      : sliceEnd
-  }
-
-  while (len-- > start) {
-    ret[len - start] = args[len];
-  }
-
-  return ret;
-}
-
 
 },{}]},{},[3])(3)
 });
