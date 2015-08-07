@@ -1324,3 +1324,116 @@ test('should handle two-way updating with multiple components depending on the s
   teardown({renderer,el})
   end()
 })
+
+
+test('should pass events to the update function', ({equal, plan, end, pass}) => {
+  var {mount, renderer, el, app} = setup(equal)
+
+  var Test = {
+    render ({props, state}, trigger) {
+      return dom('div', {onClick: onClick})
+
+      function onClick () {
+        trigger('click')
+      }
+    },
+    update({props, state}, name) {
+      pass()
+    }
+  }
+
+  plan(1)
+  app.mount(<Test/>)
+  trigger(el.querySelector('div'), 'click')
+  teardown({renderer, el})
+  end()
+})
+
+test('should trigger state updates when updates returns an object', ({equal, plan, end, pass}) => {
+  var {mount, renderer, el, app} = setup(equal)
+  var value = false
+
+  var Test = {
+    initialState () {
+      return {test: value}
+    },
+    render ({props, state}, trigger) {
+      equal(state.test, value)
+
+      return dom('div', {onClick: onClick})
+
+      function onClick () {
+        trigger('click')
+      }
+    },
+    update({props, state}, name) {
+      if(name === 'click') {
+        pass()
+        return {test: true}
+      }
+    }
+  }
+
+  plan(3)
+  app.mount(<Test/>)
+  value = true
+  trigger(el.querySelector('div'), 'click')
+  teardown({renderer, el})
+  end()
+})
+
+test('should bubble events', ({equal, plan, end, pass}) => {
+  var {mount, renderer, el, app} = setup(equal)
+
+  var TestA = {
+    render ({props, state}, trigger) {
+      return dom('div', {onClick: onClick})
+
+      function onClick () {
+        trigger('click')
+      }
+    }
+  }
+
+  var TestB = {
+    render ({props, state}, trigger) {
+      return dom(TestA, {onClick: onClick}, null)
+
+      function onClick() {
+        trigger('click2')
+      }
+    },
+
+    update ({props, state}, name) {
+      if (name === 'click2')
+        pass()
+    }
+  }
+
+  var TestC = {
+    render ({props, state}, trigger) {
+      return dom('span', {onClick: onClick}, props.children)
+
+      function onClick() {
+        trigger('click2')
+      }
+    },
+
+    update ({props, state}, name) {
+      if(name === 'click2') {
+        pass()
+      }
+    }
+  }
+
+  plan(2)
+
+  app.mount(<TestB />)
+  trigger(el.querySelector('div'), 'click')
+
+  app.mount(<TestC><TestA/></TestC>)
+  trigger(el.querySelector('div'), 'click')
+
+  teardown({renderer, el})
+  end()
+})
