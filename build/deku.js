@@ -106,8 +106,10 @@ module.exports = {
   onDragOver: 'dragover',
   onDragStart: 'dragstart',
   onDrop: 'drop',
+  onError: 'error',
   onFocus: 'focus',
   onInput: 'input',
+  onInvalid: 'invalid',
   onKeyDown: 'keydown',
   onKeyPress: 'keypress',
   onKeyUp: 'keyup',
@@ -119,6 +121,7 @@ module.exports = {
   onMouseOver: 'mouseover',
   onMouseUp: 'mouseup',
   onPaste: 'paste',
+  onReset: 'reset',
   onScroll: 'scroll',
   onSubmit: 'submit',
   onTouchCancel: 'touchcancel',
@@ -464,7 +467,7 @@ function render (app, container, opts) {
       var entityId = mountQueue.shift()
       var entity = entities[entityId]
       trigger('afterRender', entity, [entity.context, entity.nativeElement])
-      triggerUpdate('afterMount', entity, [entity.context, entity.nativeElement, setState(entity)])
+      trigger('afterMount', entity, [entity.context, entity.nativeElement, setState(entity)])
     }
   }
 
@@ -525,7 +528,7 @@ function render (app, container, opts) {
     trigger('afterRender', entity, [entity.context, entity.nativeElement])
 
     // trigger afterUpdate after all children have updated.
-    triggerUpdate('afterUpdate', entity, [entity.context, previousProps, previousState])
+    trigger('afterUpdate', entity, [entity.context, previousProps, previousState, setState(entity)])
   }
 
   /**
@@ -1025,8 +1028,10 @@ function render (app, container, opts) {
         el[name] = true
         break
       case 'innerHTML':
+        el.innerHTML = value
+        break
       case 'value':
-        el[name] = value
+        setElementValue(el, value)
         break
       case svg.isAttribute(name):
         el.setAttributeNS(svg.namespace, name, value)
@@ -1057,8 +1062,9 @@ function render (app, container, opts) {
         el[name] = false
         break
       case 'innerHTML':
+        el.innerHTML = ''
       case 'value':
-        el[name] = ''
+        setElementValue(el, null)
         break
       default:
         el.removeAttribute(name)
@@ -1116,23 +1122,6 @@ function render (app, container, opts) {
   function trigger (name, entity, args) {
     if (typeof entity.component[name] !== 'function') return
     return entity.component[name].apply(null, args)
-  }
-
-  /**
-   * Trigger a hook on the component and allow state to be
-   * updated too.
-   *
-   * @param {String} name
-   * @param {Object} entity
-   * @param {Array} args
-   *
-   * @return {void}
-   */
-
-  function triggerUpdate (name, entity, args) {
-    var update = setState(entity)
-    args.push(update)
-    trigger(name, entity, args)
   }
 
   /**
@@ -1459,6 +1448,37 @@ function getRootElement (el) {
   return el
 }
 
+/**
+ * Set the value property of an element and keep the text selection
+ * for input fields.
+ *
+ * @param {HTMLElement} el
+ * @param {String} value
+ */
+
+function setElementValue (el, value) {
+  if (el === document.activeElement && canSelectText(el)) {
+    var start = el.selectionStart
+    var end = el.selectionEnd
+    el.value = value
+    el.setSelectionRange(start, end)
+  } else {
+    el.value = value
+  }
+}
+
+/**
+ * For some reason only certain types of inputs can set the selection range.
+ *
+ * @param {HTMLElement} el
+ *
+ * @return {Boolean}
+ */
+
+function canSelectText (el) {
+  return el.tagName === 'INPUT' && ['text','search','password','tel','url'].indexOf(el.type) > -1
+}
+
 },{"./events":2,"./node-type":4,"./svg":7,"component-raf":9,"fast.js/forEach":13,"fast.js/object/assign":16,"fast.js/reduce":19,"get-uid":20,"is-dom":21,"object-defaults":24,"object-path":25}],6:[function(_require,module,exports){
 var defaults = _require('object-defaults')
 var nodeType = _require('./node-type')
@@ -1481,10 +1501,11 @@ module.exports = function (app) {
    * @return {String}
    */
 
-  function stringify (component, optProps) {
+  function stringify (component, optProps, children) {
     var propTypes = component.propTypes || {}
     var props = defaults(optProps || {}, component.defaultProps || {})
     var state = component.initialState ? component.initialState(props) : {}
+    props.children = children;
 
     for (var name in propTypes) {
       var options = propTypes[name]
@@ -1529,7 +1550,7 @@ module.exports = function (app) {
 
         str += '</' + tagName + '>'
         return str
-      case 'component': return stringify(node.type, node.attributes)
+      case 'component': return stringify(node.type, node.attributes, node.children)
     }
 
     throw new Error('Invalid type')
@@ -1579,7 +1600,17 @@ function attr (key, val) {
 
 function isValidAttributeValue (value) {
   var valueType = type(value)
-  return (valueType === 'string' || valueType === 'boolean' || valueType === 'number')
+  switch (valueType) {
+  case 'string':
+  case 'number':
+    return true;
+
+  case 'boolean':
+    return value;
+
+  default:
+    return false;
+  }
 }
 
 },{"./node-type":4,"component-type":10,"object-defaults":24}],7:[function(_require,module,exports){

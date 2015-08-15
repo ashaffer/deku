@@ -30,6 +30,17 @@ test('rendering virtual element to a string', ({equal,end}) => {
   end()
 })
 
+test('rendering components with children', ({equal,notEqual,end}) => {
+  var Component = {
+    render: function ({ props, state }) {
+      return <div>{props.children}</div>;
+    }
+  }
+  notEqual(render(<Component />), '<div>undefined</div>');
+  equal(render(<Component>test</Component>), '<div>test</div>');
+  end()
+})
+
 test('renderString: components', ({equal,end}) => {
   var Component = {
     defaultProps: {
@@ -59,7 +70,7 @@ test('renderString: lifecycle hooks', assert => {
       assert.ok(props, 'beforeRender has props')
       assert.ok(state, 'beforeRender has state')
     },
-    render: function(props, state){
+    render: function({ props, state }){
       return <div />
     }
   }
@@ -89,6 +100,26 @@ test('renderString: function attributes', assert => {
   function foo() { return 'blah' }
   var app = deku(<div onClick={foo} />)
   assert.equal(renderString(app), '<div></div>', 'attribute not rendered')
+  assert.end()
+})
+
+test('renderString: empty attributes', assert => {
+  var app = deku(<input type="checkbox" value="" />)
+  assert.equal(renderString(app), '<input type="checkbox" value=""></input>', 'empty string attribute not rendered')
+
+  var app = deku(<input type="checkbox" value={0} />)
+  assert.equal(renderString(app), '<input type="checkbox" value="0"></input>', 'zero attribute not rendered')
+
+  var app = deku(<input type="checkbox" disabled={false} />)
+  assert.equal(renderString(app), '<input type="checkbox"></input>', 'false attribute unexpectedly rendered')
+
+  var app = deku(<input type="checkbox" disabled={null} />)
+  assert.equal(renderString(app), '<input type="checkbox"></input>', 'null attribute unexpectedly rendered')
+
+  var disabled;
+  var app = deku(<input type="checkbox" disabled={disabled} />)
+  assert.equal(renderString(app), '<input type="checkbox"></input>', 'undefined attribute unexpectedly rendered')
+
   assert.end()
 })
 

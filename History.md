@@ -1,4 +1,33 @@
 
+0.5.4 / 2015-08-14
+==================
+
+ * Merge pull request #232 from dekujs/stringify/empty-attrs
+ * properly handling empty attrs, with tests to prevent regression
+ * Merge pull request #231 from dekujs/stringify/no-children
+ * fixing stringify for components with children
+ * Update events.js
+
+0.5.3 / 2015-08-12
+==================
+
+ * Merge pull request #230 from dekujs/text-selection-active-only
+ * ie handles focus differently, so gotta make sure we account for that
+ * only adjust text selection for the active element
+
+0.5.2 / 2015-08-12
+==================
+
+ * Fixed issue selecting text with some input types
+ * Update history. I'll fix that makefile one day
+
+0.5.1 / 2015-08-11
+==================
+
+ * adding some helpful form-related events
+ * Corrected afterMount arity. Fixes #225.
+ * Keep cursor position when changing input value
+
 0.5.0 / 2015-08-03
 ==================
 
